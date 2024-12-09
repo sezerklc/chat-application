@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Kullanıcı Listesi</title>
+    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        .status-dot {
+            height: 10px;
+            width: 10px;
+            background-color: green;
+            border-radius: 50%;
+            display: inline-block;
+            margin-left: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h2>Kullanıcılar</h2>
+    <ul id="users-list">
+       
+        {% for user_id, user_name in users.items() %}
+            {% if user_name != session['username'] %}     <!-- Kullanıcılar sessiondan alınıyor fakat veritabanından alınıp yazılması gerek -->
+                <li id="user-{{ user_id }}">
+                    <a href="{{ url_for('private_chat', target_user_id=user_id) }}">
+                        {{ user_name }}
+                        {% if user_id in active_users %}
+                            <span class="status-dot"></span>
+                        {% endif %}
+                    </a>
+                </li>
+            {% endif %}
+        {% endfor %}
+    </ul>
+
+    
+    <form onsubmit="sendBroadcastMessage(); return false;">
+        <input type="text" id="broadcast-message" placeholder="Aktif kullanıcılara mesaj gönder">
+        <button type="submit">Gönder</button>
+    </form>
+    <p><a href="{{ url_for('logout') }}" onclick="logoutUser()">Çıkış Yap</a></p>
+
+    <script>
+        const socket = io();
+
+        function logoutUser() {
+        socket.emit("logout"); // Socket üzerinden logout isteği gönder
+        //window.location.href = "{{ url_for('logout') }}"; // Çıkış işlemi için Flask yönlendirmesi
+    }
+
+        // Sunucuya bağlanma
+        socket.on("connect", () => {
+            console.log("Sunucuya bağlandı.");
+            socket.emit("users");
+        });
+
+        
+        let activeUsersList = [];
+
+        socket.on("users", function(users) {
+            const userList = document.getElementById("users-list");
+            userList.innerHTML = ''; 
+
+            for (const [userId, user] of Object.entries(users)) {
+                if (user.username === "{{ session['username'] }}") continue; // Oturum açan kullanıcıyı hariç tut veritabanındaki kullanıcıların hepsini tek tek gez
+
+                const li = document.createElement("li");
+                li.id = "user-" + userId;
+
+                const a = document.createElement("a");
+                a.href = `/private_chat/${userId}`;
+                a.textContent = user.username;
+
+                
+                if (activeUsersList.includes(user.username)) {
+                    const dot = document.createElement("span");
+                    dot.classList.add("status-dot");
+                    a.appendChild(dot);
+                }
+
+                li.appendChild(a);
+                userList.appendChild(li);
+            }
+        });
+
+        
+        socket.on("active_users", (activeUsers) => {
+            activeUsersList = Object.values(activeUsers); 
+
+            
+            $("#users-list li").each(function() {
+                const userId = $(this).attr("id").replace("user-", "");
+                const username = $(this).find("a").text().trim(); 
+
+                if (activeUsersList.includes(username)) { 
+                    if (!$(this).find(".status-dot").length) {
+                        const dot = document.createElement("span");
+                        dot.classList.add("status-dot");
+                        $(this).find("a").append(dot);
+                    }
+                } else {
+                   
+                    $(this).find(".status-dot").hide();
+                }
+            });
+        });
+
+      
+        function sendBroadcastMessage() {
+            const message = document.getElementById("broadcast-message").value;
+            if (message) {
+                socket.emit("broadcast_message", { message: message });
+                document.getElementById("broadcast-message").value = '';
+            }
+        }
+    </script>
+</body>
+</html>
